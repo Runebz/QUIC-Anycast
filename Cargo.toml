@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 log = "0.4.29"
-mio = { version = "1.2.0", features = ["net"] }
+mio = { version = "1.2.0", features = ["net", "os-poll"] }
 quiche = { version = "0.28.0", features = ["pkg-config-meta"] }
 ring = "0.17.14"
 url = "2.5.8"
