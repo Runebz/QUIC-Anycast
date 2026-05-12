@@ -56,6 +56,7 @@ struct Client {
 type ClientMap = HashMap<quiche::ConnectionId<'static>, Client>;
 
 fn main() {
+    env_logger::init();
     let mut buf = [0; 65535];
     let mut out = [0; MAX_DATAGRAM_SIZE];
 
@@ -84,10 +85,10 @@ fn main() {
     let mut config = quiche::Config::new(quiche::PROTOCOL_VERSION).unwrap();
 
     config
-        .load_cert_chain_from_pem_file("examples/cert.crt")
+        .load_cert_chain_from_pem_file("certs/cert.crt")
         .unwrap();
     config
-        .load_priv_key_from_pem_file("examples/cert.key")
+        .load_priv_key_from_pem_file("certs/cert.key")
         .unwrap();
 
     config
@@ -353,7 +354,7 @@ fn main() {
                                 stream_id,
                                 &list,
                                 &mut client.partial_responses,
-                                "examples/root",
+                                "files",
                             );
                         },
 

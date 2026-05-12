@@ -34,6 +34,7 @@ use ring::rand::*;
 const MAX_DATAGRAM_SIZE: usize = 1350;
 
 fn main() {
+    env_logger::init();
     let mut buf = [0; 65535];
     let mut out = [0; MAX_DATAGRAM_SIZE];
 
