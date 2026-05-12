@@ -76,7 +76,7 @@ fn main() {
 
     // Create the UDP listening socket, and register it with the event loop.
     let mut socket =
-        mio::net::UdpSocket::bind("127.0.0.1:4433".parse().unwrap()).unwrap();
+        mio::net::UdpSocket::bind("0.0.0.0:4433".parse().unwrap()).unwrap();
     poll.registry()
         .register(&mut socket, mio::Token(0), mio::Interest::READABLE)
         .unwrap();
@@ -612,6 +612,8 @@ fn build_response(
             b"content-length",
             body.len().to_string().as_bytes(),
         ),
+        // quiche::h3::Header::new(b"preferred_address", local_addr) // probably what needs to be
+        // done
     ];
 
     (headers, body)
