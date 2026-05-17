@@ -612,8 +612,6 @@ fn build_response(
             b"content-length",
             body.len().to_string().as_bytes(),
         ),
-        // quiche::h3::Header::new(b"preferred_address", local_addr) // probably what needs to be
-        // done
     ];
 
     (headers, body)
