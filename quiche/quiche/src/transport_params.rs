@@ -29,6 +29,9 @@
 
 use std::collections::HashSet;
 use std::mem::size_of;
+use std::net::Ipv4Addr;
+use std::net::Ipv6Addr;
+use std::usize;
 
 use crate::ConnectionId;
 use crate::Error;
@@ -37,7 +40,6 @@ use crate::MAX_STREAM_ID;
 
 #[cfg(feature = "qlog")]
 use crate::crypto;
-use qlog::StatelessResetToken;
 #[cfg(feature = "qlog")]
 use qlog::events::quic::TransportInitiator;
 #[cfg(feature = "qlog")]
@@ -147,15 +149,21 @@ impl<'a> Iterator for UnknownTransportParameterIterator<'a> {
     }
 }
 
-#[derive(Debug)]
+/// PreferredAddress parameters
+#[derive(Clone, Debug, PartialEq)]
 pub struct PreferredAddress {
-    ipv4_address: u32,
-    ipv4_port: u16,
-    ipv6_address: u128,
-    ipv6_port: u16,
-    cid_len: u8,
-    cid: ConnectionId<'static>,
-    stateless_reset_token: StatelessResetToken,
+    /// docs
+    pub ipv4_address: Ipv4Addr,
+    /// docs
+    pub ipv4_port: u16,
+    /// docs
+    pub ipv6_address: Ipv6Addr,
+    /// docs
+    pub ipv6_port: u16,
+    /// docs
+    pub cid: Vec<u8>,
+    /// docs
+    pub stateless_reset_token: [u8; 16],
 }
 
 /// QUIC Transport Parameters
@@ -188,7 +196,7 @@ pub struct TransportParams {
     /// Whether active migration is disabled.
     pub disable_active_migration: bool,
     /// The preferred address to which a connection should be migrated post-handshake.
-    pub preferred_address: PreferredAddress,
+    pub preferred_address: Option<PreferredAddress>,
     /// The active connection ID limit.
     pub active_conn_id_limit: u64,
     /// The value that the endpoint included in the Source CID field of a Retry
@@ -355,7 +363,8 @@ impl TransportParams {
                     if is_server {
                         return Err(Error::InvalidTransportParam);
                     }
-
+                    println!("recieved preferred_address");
+                    println!("pref_addr = {:?}", val.get_varint());
                     // TODO: decode preferred_address for client
                 },
 
@@ -414,6 +423,7 @@ impl TransportParams {
     pub(crate) fn encode<'a>(
         tp: &TransportParams, is_server: bool, out: &'a mut [u8],
     ) -> Result<&'a mut [u8]> {
+        println!("out capacity = {}", out.len());
         let mut b = octets::OctetsMut::with_slice(out);
 
         if is_server {
@@ -536,7 +546,23 @@ impl TransportParams {
             TransportParams::encode_param(&mut b, 0x000c, 0)?;
         }
 
-        // TODO: encode preferred_address
+        if let Some(pref_addr) = &tp.preferred_address {
+            let pref_add_len = 4 + 2 + 16 + 2 + 1 + pref_addr.cid.len() + 16;
+            println!("pref_addr_len = {}", pref_add_len);
+            TransportParams::encode_param(&mut b, 0x000d, pref_add_len
+            )?;
+
+            b.put_bytes(&pref_addr.ipv4_address.octets())?;
+            b.put_u16(pref_addr.ipv4_port)?;
+
+            b.put_bytes(&pref_addr.ipv6_address.octets())?;
+            b.put_u16(pref_addr.ipv6_port)?;
+
+            b.put_u8(pref_addr.cid.len() as u8)?;
+            b.put_bytes(&pref_addr.cid)?;
+
+            b.put_bytes(&pref_addr.stateless_reset_token)?;
+        }
 
         if tp.active_conn_id_limit != 2 {
             assert!(tp.active_conn_id_limit <= octets::MAX_VAR_INT);

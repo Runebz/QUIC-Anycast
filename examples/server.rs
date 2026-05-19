@@ -27,7 +27,7 @@
 #[macro_use]
 extern crate log;
 
-use std::net;
+use std::net::{self, Ipv4Addr, Ipv6Addr};
 
 use std::collections::HashMap;
 
@@ -244,7 +244,7 @@ fn main() {
                     continue 'read;
                 }
 
-                let odcid = validate_token(&from, token);
+                let odcid = validate_token(&from, &token);
 
                 // The token was not valid, meaning the retry failed, so
                 // drop the packet.
@@ -263,6 +263,19 @@ fn main() {
                 let scid = hdr.dcid.clone();
 
                 debug!("New connection: dcid={:?} scid={:?}", hdr.dcid, scid);
+                
+                let sr_token: [u8; 16] = rand::random();
+                assert_eq!(sr_token.len(), 16);
+                
+                config.set_preferred_address(Some(quiche::PreferredAddress {
+                    ipv4_address: Ipv4Addr::from([127,0,0,1]),
+                    ipv4_port: 4433,
+
+                    ipv6_address: Ipv6Addr::from([0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]),
+                    ipv6_port: 0,
+                    cid: odcid.as_ref().map(|c| c.as_ref().to_vec()).expect("preferred address requires non empty CID"),
+                    stateless_reset_token: sr_token,
+                }));
 
                 let conn = quiche::accept(
                     &scid,

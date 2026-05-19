@@ -1079,8 +1079,11 @@ impl Config {
     pub fn set_disable_active_migration(&mut self, v: bool) {
         self.local_transport_params.disable_active_migration = v;
     }
-
-    pub fn set_preferred_address(&mut self, v: u64) {
+    
+    /// Sets the 'preferred_address' transport parameter.
+    ///
+    /// The default value is 'None'.
+    pub fn set_preferred_address(&mut self, v: Option<PreferredAddress>) {
         self.local_transport_params.preferred_address = v;
     }
 
@@ -9486,6 +9489,7 @@ pub use crate::recovery::StartupExitReason;
 
 pub use crate::stream::StreamIter;
 
+pub use crate::transport_params::PreferredAddress;
 pub use crate::transport_params::TransportParams;
 pub use crate::transport_params::UnknownTransportParameter;
 pub use crate::transport_params::UnknownTransportParameterIterator;

@@ -7,6 +7,7 @@ edition = "2024"
 env_logger = "0.11.10"
 log = "0.4.29"
 mio = { version = "1.2.0", features = ["net", "os-poll"] }
-quiche = { path = "quiche/quiche" }
+quiche = { path = "quiche/quiche", features = ["qlog"] }
+rand = "0.10.1"
 ring = "0.17.14"
 url = "2.5.8"
