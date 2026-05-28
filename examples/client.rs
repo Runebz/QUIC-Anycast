@@ -27,6 +27,8 @@
 #[macro_use]
 extern crate log;
 
+use std::net::SocketAddr;
+
 use quiche::h3::NameValue;
 
 use ring::rand::*;
@@ -55,7 +57,7 @@ fn main() {
     let mut events = mio::Events::with_capacity(1024);
 
     // Resolve server address.
-    let peer_addr = url.socket_addrs(|| None).unwrap()[0];
+    let mut peer_addr = url.socket_addrs(|| None).unwrap()[0];
 
     // Bind to INADDR_ANY or IN6ADDR_ANY depending on the IP family of the
     // server address. This is needed on macOS and BSD variants that don't
@@ -155,6 +157,8 @@ fn main() {
 
     let mut req_sent = false;
 
+    let mut pending_peer: Option<SocketAddr> = None;
+    let mut migrated = false;
     loop {
         poll.poll(&mut events, conn.timeout()).unwrap();
 
@@ -208,14 +212,48 @@ fn main() {
         }
 
         debug!("done reading");
-
+ 
         if conn.is_closed() {
             info!("connection closed, {:?}", conn.stats());
             break;
         }
 
+
+        if conn.is_established()
+            && !migrated
+            && pending_peer.is_none()
+            && let Some(tp) = conn.peer_transport_params()
+            && let Some(pa) = &tp.preferred_address
+        {
+            let new_peer = std::net::SocketAddr::new(
+                std::net::IpAddr::V4(pa.ipv4_address),
+                pa.ipv4_port,
+            );
+
+            if let Err(e) = conn.probe_path(local_addr, new_peer) {
+                eprintln!("probing failed: {:?}", e);
+            } else {
+                pending_peer = Some(new_peer);
+                println!("probing {}", new_peer);
+            }
+        }
+
+        if let Some(new_peer) = pending_peer
+            && conn.is_path_validated(local_addr, new_peer).unwrap() {
+            
+                peer_addr = new_peer;
+                let _ = conn.migrate(local_addr, new_peer);
+                migrated = true;
+                pending_peer = None;
+                println!("migrated to {}", new_peer);
+            
+        }
+
         // Create a new HTTP/3 connection once the QUIC connection is established.
         if conn.is_established() && http3_conn.is_none() {
+            //  migrate (set dest to pref_addr) here
+            //  let preferred_url = url::Url::parse(preferred_address_string).unwrap();
+            //  peer_addr = preferred_url.socket_addrs(|| None).unwrap()[0];
             http3_conn = Some(
                 quiche::h3::Connection::with_transport(&mut conn, &h3_config)
                 .expect("Unable to create HTTP/3 connection, check the server's uni stream limit and window size"),

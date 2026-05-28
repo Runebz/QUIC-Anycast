@@ -363,8 +363,61 @@ impl TransportParams {
                     if is_server {
                         return Err(Error::InvalidTransportParam);
                     }
-                    println!("recieved preferred_address");
-                    println!("pref_addr = {:?}", val.get_varint());
+                    println!("received preferred_address");
+                    let ipv4_addr_bytes = val.get_bytes(4)?.to_vec();
+                    let ipv4_addr = Ipv4Addr::new(
+                        ipv4_addr_bytes[0],
+                        ipv4_addr_bytes[1],
+                        ipv4_addr_bytes[2],
+                        ipv4_addr_bytes[3],
+                    );
+
+                    let ipv4_port = val.get_u16()?;
+
+                    let ipv6_addr_bytes = val.get_bytes(16)?.to_vec();
+
+                    let ipv6_addr = Ipv6Addr::from([
+                        ipv6_addr_bytes[0],
+                        ipv6_addr_bytes[1],
+                        ipv6_addr_bytes[2],
+                        ipv6_addr_bytes[3],
+                        ipv6_addr_bytes[4],
+                        ipv6_addr_bytes[5],
+                        ipv6_addr_bytes[6],
+                        ipv6_addr_bytes[7],
+                        ipv6_addr_bytes[8],
+                        ipv6_addr_bytes[9],
+                        ipv6_addr_bytes[10],
+                        ipv6_addr_bytes[11],
+                        ipv6_addr_bytes[12],
+                        ipv6_addr_bytes[13],
+                        ipv6_addr_bytes[14],
+                        ipv6_addr_bytes[15],
+                    ]);
+
+                    let ipv6_port = val.get_u16()?;
+
+                    let cid_len = val.get_u8()? as usize;
+
+                    let cid = val.get_bytes(cid_len)?.to_vec();
+
+                    let token_bytes = val.get_bytes(16)?.to_vec();
+
+                    let mut token = [0u8; 16];
+
+                    token.copy_from_slice(&token_bytes);
+
+                    tp.preferred_address = Some(PreferredAddress {
+                        ipv4_address: ipv4_addr,
+                        ipv4_port,
+                        ipv6_address: ipv6_addr,
+                        ipv6_port,
+                        cid,
+                        stateless_reset_token: token,
+                    });
+
+                    println!("preferred_address = {:?}", tp.preferred_address);
+
                     // TODO: decode preferred_address for client
                 },
 
@@ -423,7 +476,6 @@ impl TransportParams {
     pub(crate) fn encode<'a>(
         tp: &TransportParams, is_server: bool, out: &'a mut [u8],
     ) -> Result<&'a mut [u8]> {
-        println!("out capacity = {}", out.len());
         let mut b = octets::OctetsMut::with_slice(out);
 
         if is_server {
@@ -548,7 +600,6 @@ impl TransportParams {
 
         if let Some(pref_addr) = &tp.preferred_address {
             let pref_add_len = 4 + 2 + 16 + 2 + 1 + pref_addr.cid.len() + 16;
-            println!("pref_addr_len = {}", pref_add_len);
             TransportParams::encode_param(&mut b, 0x000d, pref_add_len
             )?;
 
