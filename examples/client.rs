@@ -226,10 +226,20 @@ fn main() {
                 if conn.is_established() && got_headers {
                     if let Some(tp) = conn.peer_transport_params() {
                         if let Some(pa) = &tp.preferred_address {
-                            let new_peer = std::net::SocketAddr::new(
-                                std::net::IpAddr::V4(pa.ipv4_address),
-                                pa.ipv4_port,
-                            );
+                            let mut new_peer;
+                            if pa.ipv6_address == "::".parse::<std::net::Ipv6Addr>().unwrap() && pa.ipv6_port == 0 {
+                                println!("found new ipv4 peer: {:?}", pa.ipv4_address);
+                                new_peer = std::net::SocketAddr::new(
+                                    std::net::IpAddr::V4(pa.ipv4_address),
+                                    pa.ipv4_port,
+                                );
+                            } else {
+                                println!("found new ipv6 peer: {:?}", pa.ipv6_address);
+                                new_peer = std::net::SocketAddr::new(
+                                    std::net::IpAddr::V6(pa.ipv6_address),
+                                    pa.ipv6_port,
+                                );
+                            }
 
                             if let Err(e) = conn.probe_path(local_addr, new_peer) {
                                 eprintln!("probe failed: {:?}", e);
