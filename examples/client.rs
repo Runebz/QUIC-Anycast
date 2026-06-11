@@ -71,8 +71,8 @@ fn main() {
     // server address. This is needed on macOS and BSD variants that don't
     // support binding to IN6ADDR_ANY for both v4 and v6.
     let bind_addr = match peer_addr {
-        std::net::SocketAddr::V4(_) => "0.0.0.0:0",
-        std::net::SocketAddr::V6(_) => "[::]:0",
+        std::net::SocketAddr::V4(_) => "0.0.0.0:4434",
+        std::net::SocketAddr::V6(_) => "[::]:4434",
     };
 
     // Create the UDP socket backing the QUIC connection, and register it with
@@ -368,7 +368,10 @@ fn main() {
         // quiche reports that there are no more packets to be sent.
         loop {
             let (write, send_info) = match conn.send(&mut out) {
-                Ok(v) => v,
+                Ok(v) => {
+                    debug!("sending result: {v:?}");
+                    v
+                },
 
                 Err(quiche::Error::Done) => {
                     debug!("done writing");
