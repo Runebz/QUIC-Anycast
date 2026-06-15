@@ -27,7 +27,7 @@
 #[macro_use]
 extern crate log;
 
-use std::net::SocketAddr;
+use std::{net::SocketAddr, time::{Duration, Instant}};
 
 use quiche::h3::NameValue;
 
@@ -41,6 +41,7 @@ enum PathState {
     Probing { peer: SocketAddr },
     Migrating { peer: SocketAddr },
     Migrated { peer: SocketAddr },
+    Cooldown { until: Instant, peer: SocketAddr},
 }
 
 fn main() {
@@ -102,7 +103,8 @@ fn main() {
     config.set_initial_max_stream_data_uni(1_000_000);
     config.set_initial_max_streams_bidi(100);
     config.set_initial_max_streams_uni(100);
-    config.set_disable_active_migration(true);
+    config.set_disable_active_migration(false);
+    config.set_active_connection_id_limit(100);
 
     let mut http3_conn = None;
 
@@ -165,7 +167,8 @@ fn main() {
 
     let mut req_sent = false;
     let mut path_state = PathState::Default;
-    let mut got_headers = false;
+    let mut migration_in_progress = false;
+    let mut response_done = false;
     loop {
         poll.poll(&mut events, conn.timeout()).unwrap();
 
@@ -223,28 +226,37 @@ fn main() {
  
         match &path_state {
             PathState::Default => {
-                if conn.is_established() && got_headers {
-                    if let Some(tp) = conn.peer_transport_params() {
-                        if let Some(pa) = &tp.preferred_address {
-                            let mut new_peer;
-                            if pa.ipv6_address == "::".parse::<std::net::Ipv6Addr>().unwrap() && pa.ipv6_port == 0 {
-                                println!("found new ipv4 peer: {:?}", pa.ipv4_address);
-                                new_peer = std::net::SocketAddr::new(
-                                    std::net::IpAddr::V4(pa.ipv4_address),
-                                    pa.ipv4_port,
-                                );
-                            } else {
-                                println!("found new ipv6 peer: {:?}", pa.ipv6_address);
-                                new_peer = std::net::SocketAddr::new(
-                                    std::net::IpAddr::V6(pa.ipv6_address),
-                                    pa.ipv6_port,
-                                );
-                            }
+                //println!("default path state");
+                if conn.is_established() {
 
-                            if let Err(e) = conn.probe_path(local_addr, new_peer) {
-                                eprintln!("probe failed: {:?}", e);
-                            } else {
-                                path_state = PathState::Probing { peer: new_peer };
+                    if !req_sent {
+                        println!("request not sent yet");
+                    }
+                    else if !migration_in_progress {
+                        if let Some(tp) = conn.peer_transport_params() {
+                            //println!("active_cid_limit = {:?}", tp.active_conn_id_limit);
+                            if let Some(pa) = &tp.preferred_address {
+                                let mut new_peer;
+                                if pa.ipv6_address == "::".parse::<std::net::Ipv6Addr>().unwrap() && pa.ipv6_port == 0 {
+                                    //println!("found new ipv4 peer: {:?}:{:?}", pa.ipv4_address, pa.ipv4_port);
+                                    new_peer = std::net::SocketAddr::new(
+                                        std::net::IpAddr::V4(pa.ipv4_address),
+                                        pa.ipv4_port,
+                                    );
+                                } else {
+                                    println!("found new ipv6 peer: [{:?}]:{:?}", pa.ipv6_address, pa.ipv6_port);
+                                    new_peer = std::net::SocketAddr::new(
+                                        std::net::IpAddr::V6(pa.ipv6_address),
+                                        pa.ipv6_port,
+                                    );
+                                }
+
+                                if let Err(e) = conn.probe_path(local_addr, new_peer) {
+                                    //eprintln!("probe failed: {:?}", e);
+                                } else {
+                                    path_state = PathState::Probing { peer: new_peer };
+                                    migration_in_progress = true;
+                                }
                             }
                         }
                     }
@@ -253,6 +265,7 @@ fn main() {
 
             PathState::Probing { peer } => {
                 // Only transition when quiche says path is validated
+                println!("path state probing");
                 let busy = false;
                 if !busy && conn.is_path_validated(local_addr, *peer).unwrap_or(false) {
                     path_state = PathState::Migrating { peer: *peer };
@@ -260,20 +273,47 @@ fn main() {
             }
 
             PathState::Migrating { peer } => {
+                println!("attempting to migrate...");
+                if !migration_in_progress {
+                    continue;
+                }
                 match conn.migrate(socket.local_addr().unwrap(), *peer) {
                     Ok(_) => {
                         println!("migrated to {}", peer);
+                        migration_in_progress = false;
                         path_state = PathState::Migrated { peer: *peer };
                     }
                     Err(e) => {
+                        migration_in_progress = false;
                         eprintln!("migration failed: {:?}", e);
-                        path_state = PathState::Default; // retry safely
+                        path_state = PathState::Cooldown {
+                            until: Instant::now() + Duration::from_millis(500),
+                            peer: *peer,
+                        }; // retry safely
                     }
                 }
             }
 
             PathState::Migrated { .. } => {
                 // stable state, do nothing
+            }
+
+            PathState::Cooldown { until, peer } => {
+                println!("In cooldown state");
+                if Instant::now() < *until {
+                    continue;
+                }
+
+                if conn.is_established() {
+                    if let Err(e) = conn.probe_path(local_addr, *peer) {
+                        path_state = PathState::Cooldown {
+                            until: Instant::now() + Duration::from_millis(500),
+                            peer: *peer,
+                        };
+                    } else {
+                        path_state = PathState::Probing { peer: *peer };
+                    }
+                }
             }
         }
 
@@ -313,7 +353,6 @@ fn main() {
                             hdrs_to_strings(&list),
                             stream_id
                         );
-                        got_headers = true;
                     },
 
                     Ok((stream_id, quiche::h3::Event::Data)) => {
@@ -335,8 +374,8 @@ fn main() {
                             "response received in {:?}, closing...",
                             req_start.elapsed()
                         );
-
-                        conn.close(true, 0x100, b"kthxbye").unwrap();
+                        response_done = true;
+                        //conn.close(true, 0x100, b"kthxbye").unwrap();
                     },
 
                     Ok((_stream_id, quiche::h3::Event::Reset(e))) => {
@@ -361,6 +400,13 @@ fn main() {
                         break;
                     },
                 }
+            }
+        }
+
+        if response_done {
+            if matches!(path_state, PathState::Migrated { .. }) {
+                info!("response is done and pathstate is migrated and we can close connection now");
+                conn.close(true, 0x100, b"kthxbye").unwrap();
             }
         }
 
