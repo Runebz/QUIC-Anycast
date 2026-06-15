@@ -27,22 +27,11 @@
 #[macro_use]
 extern crate log;
 
-use std::{net::SocketAddr, time::{Duration, Instant}};
-
 use quiche::{PreferredAddress, h3::NameValue};
 
 use ring::rand::*;
 
 const MAX_DATAGRAM_SIZE: usize = 1350;
-
-#[derive(Debug)]
-enum PathState {
-    Default,
-    Probing { peer: SocketAddr },
-    Migrating { peer: SocketAddr },
-    Migrated { peer: SocketAddr },
-    Cooldown { until: Instant, peer: SocketAddr},
-}
 
 fn main() {
     env_logger::init();
@@ -120,7 +109,6 @@ fn main() {
     let local_addr = socket.local_addr().unwrap();
 
     let mut req_sent = false;
-    let mut path_state = PathState::Default;
     let mut response_done = false;
     let mut received_preferred_address: Option<PreferredAddress> = None;
 
@@ -237,13 +225,13 @@ fn main() {
             {
                 received_preferred_address = Some(pa.clone());
                 if pa.ipv6_address == "::".parse::<std::net::Ipv6Addr>().unwrap() && pa.ipv6_port == 0 {
-                    url = url::Url::parse(format!("https://{}:{}{}", pa.ipv4_address.to_string(), pa.ipv4_port.to_string(), path).as_str()).unwrap();
+                    url = url::Url::parse(format!("https://{}:{}{}", pa.ipv4_address, pa.ipv4_port, path).as_str()).unwrap();
                 } else {
-                    url = url::Url::parse(&args.next().unwrap()).unwrap();
+                    url = url::Url::parse(format!("https://[{}]:{}{}", pa.ipv6_address, pa.ipv6_port, path).as_str()).unwrap();
                 }
                 info!("new url: {}", url.as_str());
 
-                conn.close(true, 0x100, b"kthxbye");
+                conn.close(true, 0x100, b"kthxbye").unwrap();
                 info!("closed connection due to receiving pref_addr");
 
                 peer_addr = url.socket_addrs(|| None).unwrap()[0];
@@ -270,14 +258,13 @@ fn main() {
 
             // Send HTTP requests once the QUIC connection is established, and until
             // all requests have been sent.
-            if let Some(h3_conn) = &mut http3_conn {
-                if !req_sent {
+            if let Some(h3_conn) = &mut http3_conn 
+                && !req_sent {
                     info!("sending HTTP request {req:?}");
 
                     h3_conn.send_request(&mut conn, &req, true).unwrap();
 
                     req_sent = true;
-                }
             }
 
             if let Some(http3_conn) = &mut http3_conn {
@@ -341,8 +328,8 @@ fn main() {
             }
 
             if response_done {
-                info!("response is done, we can close the connection now");
                 conn.close(true, 0x100, b"kthxbye").unwrap();
+                info!("connection closed, {:?}", conn.stats());
                 break 'request
             }
 
