@@ -199,15 +199,15 @@ fn main() {
                         let conn_id = ring::hmac::sign(&conn_id_seed, &hdr.dcid);
                         let conn_id = &conn_id.as_ref()[..quiche::MAX_CONN_ID_LEN];
                         let conn_id = conn_id.to_vec().into();
-                        /*
+                        
                         let primary_dcid = cid_aliases.get(&hdr.dcid)
                             .cloned()
                             .unwrap_or_else(|| hdr.dcid.clone());
-*/
+
 
                         // Lookup a connection based on the packet's connection ID. If there
                         // is no connection matching, create a new one.
-                        let client = if !clients.contains_key(&hdr.dcid) &&
+                        let client = if !clients.contains_key(&primary_dcid) &&
                             !clients.contains_key(&conn_id)
                         {
                             if hdr.ty != quiche::Type::Initial {
@@ -232,7 +232,7 @@ fn main() {
 
                                     panic!("send() failed: {e:?}");
                                 }
-                                continue 'socketloop;
+                                continue 'drain;
                             }
 
                             let mut scid = [0; quiche::MAX_CONN_ID_LEN];
@@ -269,7 +269,7 @@ fn main() {
 
                                     panic!("send() failed: {e:?}");
                                 }
-                                continue 'socketloop;
+                                continue 'drain;
                             }
 
                             let odcid = validate_token(&from, &token);
@@ -348,7 +348,7 @@ fn main() {
 
                             clients.get_mut(&scid).unwrap()
                         } else {
-                            match clients.get_mut(&hdr.dcid) {
+                            match clients.get_mut(&primary_dcid) {
                                 Some(v) => v,
 
                                 None => clients.get_mut(&conn_id).unwrap(),
@@ -391,7 +391,7 @@ fn main() {
 
                                 Err(e) => {
                                     error!("failed to create HTTP/3 connection: {e}");
-                                    continue 'socketloop;
+                                    continue 'drain;
                                 },
                             };
 
