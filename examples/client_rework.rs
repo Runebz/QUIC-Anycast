@@ -233,6 +233,20 @@ fn main() {
                 conn.close(true, 0x100, b"kthxbye").unwrap();
                 info!("closed connection due to receiving pref_addr");
 
+                // Flush the CONNECTION_CLOSE frame so the server actually stops sending
+                loop {
+                    match conn.send(&mut out) {
+                        Ok((write, send_info)) => {
+                            let _ = socket.send_to(&out[..write], send_info.to);
+                        }
+                        Err(quiche::Error::Done) => break,
+                        Err(e) => {
+                            error!("send failed during close flush: {:?}", e);
+                            break;
+                        }
+                    }
+                }
+
                 peer_addr = url.socket_addrs(|| None).unwrap()[0];
 
                 SystemRandom::new().fill(&mut new_scid[..]).unwrap();

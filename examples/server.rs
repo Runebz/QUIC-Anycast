@@ -199,14 +199,15 @@ fn main() {
                         let conn_id = ring::hmac::sign(&conn_id_seed, &hdr.dcid);
                         let conn_id = &conn_id.as_ref()[..quiche::MAX_CONN_ID_LEN];
                         let conn_id = conn_id.to_vec().into();
+                        /*
                         let primary_dcid = cid_aliases.get(&hdr.dcid)
                             .cloned()
                             .unwrap_or_else(|| hdr.dcid.clone());
-
+*/
 
                         // Lookup a connection based on the packet's connection ID. If there
                         // is no connection matching, create a new one.
-                        let client = if !clients.contains_key(&primary_dcid) &&
+                        let client = if !clients.contains_key(&hdr.dcid) &&
                             !clients.contains_key(&conn_id)
                         {
                             if hdr.ty != quiche::Type::Initial {
@@ -317,7 +318,7 @@ fn main() {
                             .unwrap();
                             info!("connection with client {scid:?} established");
 
-
+/*
                             let mut spare_cid_bytes = [0u8; quiche::MAX_CONN_ID_LEN];
                             rng.fill(&mut spare_cid_bytes).unwrap();
                             let mut spare_token = [0u8; 16];
@@ -333,7 +334,7 @@ fn main() {
                                 },
                                 Err(e) => error!("Failed to add spare SCID: {e:?}"),
                             }
-
+*/
                             let client = Client {
                                 conn,
                                 http3_conn: None,
@@ -347,7 +348,7 @@ fn main() {
 
                             clients.get_mut(&scid).unwrap()
                         } else {
-                            match clients.get_mut(&primary_dcid) {
+                            match clients.get_mut(&hdr.dcid) {
                                 Some(v) => v,
 
                                 None => clients.get_mut(&conn_id).unwrap(),
