@@ -95,8 +95,6 @@ fn main() {
     config.set_disable_active_migration(false);
     config.set_active_connection_id_limit(100);
 
-    let mut http3_conn = None;
-
     // Generate a random source connection ID for the connection.
     let mut scid = [0; quiche::MAX_CONN_ID_LEN];
     SystemRandom::new().fill(&mut scid[..]).unwrap();
@@ -108,8 +106,6 @@ fn main() {
     // Get local address.
     let local_addr = socket.local_addr().unwrap();
 
-    let mut req_sent = false;
-    let mut response_done = false;
     let mut received_preferred_address: Option<PreferredAddress> = None;
 
     let h3_config = quiche::h3::Config::new().unwrap();
@@ -125,6 +121,9 @@ fn main() {
     }
     
     'request: loop {
+        let mut req_sent = false;
+        let mut response_done = false;
+        let mut http3_conn = None;
         // Create a QUIC connection and initiate handshake.
         let mut conn =
             quiche::connect(url.domain(), &scid, local_addr, peer_addr, &mut config)
